@@ -3,9 +3,9 @@ import urllib
 import urllib2
 
 class Downloader(object):
+	
 	url = None
 
-	
 	def __init__(self, url=None):
 		"""Downloading data from web"""
 		self.setURL(url)
