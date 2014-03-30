@@ -69,6 +69,11 @@ class XMLDatabase(DatabaseInterface):
 		tree.write(filename)
 		return filename
 
+	def saveBug(self, bug):
+		
+	def createEntity(self, data):
+		raise NotImplementedError("DOVRSI OVO")
+
 class Downloader(object):
 	
 	__url = None
@@ -142,7 +147,7 @@ class FedoraBugzilla(Extractor):
 		for d in data:
 			bug_id = d[0]
 			bug = self.getBugById(bug_id)
-			print bug
+			self.db.saveBug(bug)
 
 	def getData(self):
 		"""Returns parsed data from url"""
