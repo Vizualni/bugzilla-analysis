@@ -40,7 +40,7 @@ class XMLDatabase(DatabaseInterface):
 	__folder = "./data/"
 	__filename_template = "bugzilla-database-%d.xml"
 	__filename_regex = "bugzilla-database-(\d+)\.xml"
-
+	__current_file_index = 1
 	def __getAllFiles(self):
 		files = []
 		for f in os.listdir(this.__folder):
@@ -50,8 +50,17 @@ class XMLDatabase(DatabaseInterface):
 					files.append(f)
 		return files
 
+	def __getCurrentFile(self):
+		"""Returns current file to write xml file in."""
+		filename = self.__folder + self.__filename_template %(self.__current_file_index)
+		if not os.path.isfile(filename):
+			tmp = ET.Element("bugs")
+			ttree = ET.ElementTree(tmp)
+			ttree.write(filename)
+		return filename
+
 	def __createNewXMLFile(self):
-		""" Creates empty XML file and return its filename. """
+		"""Creates empty XML file and return its filename."""
 		i = 1 # current database index.
 		indexSet = set()
 		for f in self.__getAllFiles():
@@ -62,22 +71,31 @@ class XMLDatabase(DatabaseInterface):
 			if i not in indexSet:
 				break
 			i+=1
-
-		filename = self.__filename_template % (i)
+		self.__current_file_index = i
+		filename = self.__filename_template % (__current_file_index)
 		root = ET.Element("bugs")
 		tree = ET.ElementTree(root)
 		tree.write(filename)
 		return filename
 
-	def saveBug(self, bug):
-		
+	def saveBugs(self, bugs):
+		""" Saves bugs in database on disk. """
+		"""if bugs is string:
+		elif bugs is list:
+		el"""
+		current_file = self.__getCurrentFile()
+		tree = ET.parse(current_file)
+		root = tree.getroot()
+		for bug in bugs:
+			root.append(bug)
+		tree.write(current_file)
+
 	def createEntity(self, data):
 		raise NotImplementedError("DOVRSI OVO")
 
 class Downloader(object):
-	
 	__url = None
-
+	__postData = None
 	def __init__(self, url=None):
 		"""Downloading data from web"""
 		self.setURL(url)
@@ -95,12 +113,29 @@ class Downloader(object):
 			raise ValueError("You must set url.")
 		data = None
 		try:
-			request = urllib2.urlopen(self.__url)
+			request = None
+			if self.__postData is None:
+				request = urllib2.urlopen(self.__url)
+			else:
+				request = urllib2.urlopen(self.__url, self.__postData)
+
 			data = request.read()
 		except:
-			print "Error. Handle this! (LATER)"
+			print "No internet connection...I guess."
 
 		return data
+
+	def downloadPostRequest(self, post_data=[]):
+		if type(post_data) is not list:
+			raise ValueError("Post data must be list of tuples where first item in tuple is key, second is value.")
+		data = None
+		try:
+			self.__postData = urllib.urlencode([("id", 123), ("id", 333)])
+			data = self.download()
+		finally:
+			self.__postData = None
+		return data
+
 
 
 class Extractor(object):
@@ -126,7 +161,7 @@ class FedoraBugzilla(Extractor):
 	__test_url_template = "https://bugzilla.redhat.com/buglist.cgi?bug_status=__open__&"\
 		"content=%s&no_redirect=1&order=relevance%%20desc&product=&query_format=specific"
 	__search_word = "linux"
-
+	__url_for_all_bugs = "https://bugzilla.redhat.com/show_bug.cgi"
 	def __init__(self, search_word = "linux"):
 		#super(FedoraBugzilla, self).__init__(url)
 		self.downloader = Downloader()
@@ -142,12 +177,17 @@ class FedoraBugzilla(Extractor):
 		url = self.__test_url_template % self.__search_word
 		self.downloader.setURL(url)
 		data = self.getData()
-		print "Downloaded %d bugs. Now saving them to database." % (len(data))
-
+		print "Got info about %d bugs. Now downloading them." % (len(data))
+		post_data = [("ctype", "xml"), ("excludefield", "attachmentdata")]
+		
 		for d in data:
 			bug_id = d[0]
-			bug = self.getBugById(bug_id)
-			self.db.saveBug(bug)
+			post_data.append( ("id", str(bug_id)) )
+		print "Downloading! This could take a while. PATIENCE YOU MUST HAVE my young padawan."
+		xml_of_all_bugs = self.downloader.downloadPostRequest(post_data)
+		print "Downloaded!"
+		print "Saving..."
+
 
 	def getData(self):
 		"""Returns parsed data from url"""
