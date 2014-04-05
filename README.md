@@ -1,4 +1,4 @@
-# Bugzilla-analysis
+## Bugzilla-analysis
 
 This is project I made for class called *seminar*.
 

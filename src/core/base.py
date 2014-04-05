@@ -3,7 +3,10 @@ import urllib
 import urllib2
 import os
 import re
+import sys
 import xml.etree.ElementTree as ET
+
+
 
 class DatabaseInterface():
 	"""
@@ -42,6 +45,7 @@ class XMLDatabase(DatabaseInterface):
 	__filename_regex = "bugzilla-database-(\d+)\.xml"
 	__current_file_index = 1
 	def __getAllFiles(self):
+		"""Gets all files that match bugzilla format."""
 		files = []
 		for f in os.listdir(this.__folder):
 			if f.endswith(".xml"):
@@ -78,17 +82,45 @@ class XMLDatabase(DatabaseInterface):
 		tree.write(filename)
 		return filename
 
+	def __getListOfBugsFromXML(self, xml):
+		"""Gets list of bugs from xml file that has been downloaded."""
+		list_of_bugs = []
+		fields = FedoraBugzillaEntity().getFields()
+		for child in xml:
+			if child.tag!="bug":
+				continue
+			newBug = ET.Element("bug")
+			for child_tag in child:
+				if child_tag.tag in fields:
+					newField = ET.SubElement(newBug, child_tag.tag)
+					newField.text = child_tag.text
+			list_of_bugs.append(newBug)
+		return list_of_bugs
+
 	def saveBugs(self, bugs):
 		""" Saves bugs in database on disk. """
-		"""if bugs is string:
-		elif bugs is list:
-		el"""
+		list_of_bugs = []
+		if isinstance(bugs, basestring):
+			try:
+				tree_bugs = ET.fromstring(bugs)
+				list_of_bugs = self.__getListOfBugsFromXML(tree_bugs)
+			except Exception, e:
+				print "Error while trying to save bugs."
+				print e
+				return False
+		elif isinstance(bugs, ElementTree):
+			list_of_bugs = self.__getListOfBugsFromXML(bugs)
+		print "There are %d bugs"%(len(list_of_bugs))
 		current_file = self.__getCurrentFile()
 		tree = ET.parse(current_file)
 		root = tree.getroot()
-		for bug in bugs:
+		for bug in list_of_bugs:
 			root.append(bug)
-		tree.write(current_file)
+		try:
+			tree.write(current_file)
+		except:
+			return False
+		return True
 
 	def createEntity(self, data):
 		raise NotImplementedError("DOVRSI OVO")
@@ -96,6 +128,7 @@ class XMLDatabase(DatabaseInterface):
 class Downloader(object):
 	__url = None
 	__postData = None
+	__chunkSize = 8192/2
 	def __init__(self, url=None):
 		"""Downloading data from web"""
 		self.setURL(url)
@@ -111,18 +144,30 @@ class Downloader(object):
 		"""Returns downloaded data from self.url"""
 		if self.__url is None:
 			raise ValueError("You must set url.")
-		data = None
+		data = ""
 		try:
 			request = None
-			if self.__postData is None:
+			if self.__postData == None:
 				request = urllib2.urlopen(self.__url)
 			else:
 				request = urllib2.urlopen(self.__url, self.__postData)
-
-			data = request.read()
-		except:
-			print "No internet connection...I guess."
-
+			size = 0
+			try:
+				size = int(request.info().getheaders("Content-Length")[0].strip())
+			except:
+				pass
+			bytes_read = 0
+			while 1:
+				tmp_data = request.read(self.__chunkSize)
+				bytes_read = len(data)
+				sys.stdout.write("--- Downloaded %.3fmb out of %.3fmb\r" %( bytes_read/(1024.0*1024.0), size/(1024.0*1024)))
+				if not tmp_data:
+					sys.stdout.write("\n")
+					break
+				data += tmp_data
+		except Exception, e:
+			print "No internet connection...I guess. ----> "
+			print "=ERROR= ",e
 		return data
 
 	def downloadPostRequest(self, post_data=[]):
@@ -130,23 +175,21 @@ class Downloader(object):
 			raise ValueError("Post data must be list of tuples where first item in tuple is key, second is value.")
 		data = None
 		try:
-			self.__postData = urllib.urlencode([("id", 123), ("id", 333)])
+			self.__postData = urllib.urlencode(post_data)
 			data = self.download()
 		finally:
 			self.__postData = None
 		return data
 
+class Bugzilla(object):
+	"""Base class for all bugzilla classes."""
 
-
-class Extractor(object):
-	"""(Interface) Extracts all data from webpage"""
-
-	def __init__(self, url):
-		pass
+	def __init__(self):
+		self.downloader = Downloader()
+		self.db = XMLDatabase()
 
 	def run(self):
-		"""Returns all data from website in form of entity array."""
-		return self.getData();
+		raise NotImplementedError("Dont know if I actually need this!")
 
 	def getData(self):
 		raise NotImplementedError("Should implement!")
@@ -156,51 +199,53 @@ class BugzillaException(Exception):
 	"""Error raise for enything related to bugzilla."""
 	pass
 
-class FedoraBugzilla(Extractor):
-
+class FedoraBugzilla(Bugzilla):
 	__test_url_template = "https://bugzilla.redhat.com/buglist.cgi?bug_status=__open__&"\
 		"content=%s&no_redirect=1&order=relevance%%20desc&product=&query_format=specific"
 	__search_word = "linux"
 	__url_for_all_bugs = "https://bugzilla.redhat.com/show_bug.cgi"
 	def __init__(self, search_word = "linux"):
-		#super(FedoraBugzilla, self).__init__(url)
-		self.downloader = Downloader()
-		self.db = XMLDatabase()
+		super(FedoraBugzilla, self).__init__()
 
 	def setSearchWord(self, sw):
+		"""Sets word to search for in online bug database."""
 		self.__search_word = str(sw)
 
 	def getBugs(self, search_word=None):
 		""" Finds all bugs for given search word. Also sets search word. """
 		if search_word is not None:
 			self.setSearchWord(search_word)
-		url = self.__test_url_template % self.__search_word
+		url = self.__test_url_template % (urllib.quote(self.__search_word))
+		print "Searching for:", self.__search_word
 		self.downloader.setURL(url)
 		data = self.getData()
 		print "Got info about %d bugs. Now downloading them." % (len(data))
 		post_data = [("ctype", "xml"), ("excludefield", "attachmentdata")]
-		
 		for d in data:
 			bug_id = d[0]
 			post_data.append( ("id", str(bug_id)) )
 		print "Downloading! This could take a while. PATIENCE YOU MUST HAVE my young padawan."
+		self.downloader.setURL(self.__url_for_all_bugs)
 		xml_of_all_bugs = self.downloader.downloadPostRequest(post_data)
 		print "Downloaded!"
 		print "Saving..."
-
+		try:
+			self.db.saveBugs(xml_of_all_bugs)
+		except Exception, e:
+			print "=ERROR= ",
+			print e.message
+			return False
+		return True
 
 	def getData(self):
 		"""Returns parsed data from url"""
-		print "Downloading from: "+self.downloader.getUrl()
 		data = self.downloader.download()
-		print "Downloaded! Now extracting data."
+		print "Downloaded! Now extracting data and looking for bug id's."
 		result = []
 		regex_for_single_item = r"<tr id=\"b\d+\" class=\"bz_bugitem.+?<\/tr>"
 		regex_for_td = r"<td[^>]*>(.+?)<\/td>"
 		regex_to_remove_tags = r"<[^>]*>"
-
 		result1 = re.findall(regex_for_single_item, data, re.M | re.DOTALL)
-
 		#I must find each td and get only what's inside of it (without a tag)
 		for res in result1:
 			one_entity = []
@@ -241,6 +286,9 @@ class Entity:
 		raise AttributeError(name + " doesnt exists")
 
 	def __getattr__(self, name, value):
+		print "TRAZIM PRISTUP ZA IME,", value
+		if value=="fields":
+			return self.fields
 		if name in self.fields:
 			self.fields[name] = value
 		raise AttributeError(name + " doesnt exists")
