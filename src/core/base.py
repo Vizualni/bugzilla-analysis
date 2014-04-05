@@ -7,6 +7,12 @@ import sys
 import xml.etree.ElementTree as ET
 
 
+def isInteger(string):
+	try:
+		int(string)
+		return True
+	except:
+		return False
 
 class DatabaseInterface():
 	"""
@@ -200,10 +206,12 @@ class BugzillaException(Exception):
 	pass
 
 class FedoraBugzilla(Bugzilla):
-	__test_url_template = "https://bugzilla.redhat.com/buglist.cgi?bug_status=__open__&"\
-		"content=%s&no_redirect=1&order=relevance%%20desc&product=&query_format=specific"
+	__base_url = "https://bugzilla.redhat.com"
+	__test_url_template = __base_url + "/buglist.cgi?query_format=specific&order=relevance+desc&bug_status=__open__"\
+	"&product=&content=%s"
+	#maknut OPEN. Tako ih ima vise.
 	__search_word = "linux"
-	__url_for_all_bugs = "https://bugzilla.redhat.com/show_bug.cgi"
+	__url_for_all_bugs = __base_url + "/show_bug.cgi"
 	def __init__(self, search_word = "linux"):
 		super(FedoraBugzilla, self).__init__()
 
@@ -218,11 +226,10 @@ class FedoraBugzilla(Bugzilla):
 		url = self.__test_url_template % (urllib.quote(self.__search_word))
 		print "Searching for:", self.__search_word
 		self.downloader.setURL(url)
-		data = self.getData()
+		data = self.getListOfBugIds()
 		print "Got info about %d bugs. Now downloading them." % (len(data))
 		post_data = [("ctype", "xml"), ("excludefield", "attachmentdata")]
-		for d in data:
-			bug_id = d[0]
+		for bug_id in data:
 			post_data.append( ("id", str(bug_id)) )
 		print "Downloading! This could take a while. PATIENCE YOU MUST HAVE my young padawan."
 		self.downloader.setURL(self.__url_for_all_bugs)
@@ -237,12 +244,15 @@ class FedoraBugzilla(Bugzilla):
 			return False
 		return True
 
-	def getData(self):
-		"""Returns parsed data from url"""
+	def getListOfBugIds(self):
+		"""Returns list of bug ids for search word from html.
+			Bug id is a number and first element one in table row!
+		"""
 		data = self.downloader.download()
 		print "Downloaded! Now extracting data and looking for bug id's."
 		result = []
-		regex_for_single_item = r"<tr id=\"b\d+\" class=\"bz_bugitem.+?<\/tr>"
+		#regex_for_single_item = r"<tr id=\"b\d+\" class=\"bz_bugitem.+?<\/tr>"
+		regex_for_single_item = r"<tr[^>]*>.+?<\/tr>"
 		regex_for_td = r"<td[^>]*>(.+?)<\/td>"
 		regex_to_remove_tags = r"<[^>]*>"
 		result1 = re.findall(regex_for_single_item, data, re.M | re.DOTALL)
@@ -252,7 +262,12 @@ class FedoraBugzilla(Bugzilla):
 			without_td = re.findall(regex_for_td, res, re.M | re.DOTALL)
 			for x in xrange(len(without_td)):
 				one_entity.append(re.sub(regex_to_remove_tags, '', without_td[x]).strip())
-			result.append(one_entity)
+			try:
+				bug_id = one_entity[0]
+				if isInteger(bug_id):
+					result.append(bug_id)
+			except:
+				pass #do nothing
 		return result
 
 	def getBugById(self, bug_id=None):
