@@ -1,16 +1,16 @@
 #!/usr/bin/python
 from core.base import FedoraBugzilla
-
+from core.base import xmlFedoraBugzilla
 
 fbzla = FedoraBugzilla()
 running = False
 
 def main():
 	run()
-	d = FedoraBugzilla()
+	d = xmlFedoraBugzilla()
 	print "Running..."
-	print d.getBugs("webcam")
 	print d.getBugs("curl")
+	print d.getBugs("webcam")
 
 def run():
 	while running:

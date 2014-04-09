@@ -1,11 +1,12 @@
 #!/usr/bin/python
+# -*- coding: utf-8 -*-
 import urllib
 import urllib2
 import os
 import re
 import sys
 import xml.etree.ElementTree as ET
-
+from pyzilla import BugZilla as xmlrpcBugzilla_import
 
 def isInteger(string):
 	try:
@@ -114,8 +115,16 @@ class XMLDatabase(DatabaseInterface):
 				print "Error while trying to save bugs."
 				print e
 				return False
-		elif isinstance(bugs, ElementTree):
+		elif isinstance(bugs, ET.ElementTree):
 			list_of_bugs = self.__getListOfBugsFromXML(bugs)
+		elif type(bugs) is dict:
+			print "diksneri je"
+			for bug in bugs["bugs"]:
+				novi_bug = FedoraBugzillaEntity()
+				novi_bug.saveFromDict(bug)
+				#novi_bug.printMe()
+				list_of_bugs.append(novi_bug.getAsXML())
+
 		print "There are %d bugs"%(len(list_of_bugs))
 		current_file = self.__getCurrentFile()
 		tree = ET.parse(current_file)
@@ -187,6 +196,10 @@ class Downloader(object):
 			self.__postData = None
 		return data
 
+class BugzillaException(Exception):
+	"""Error raise for enything related to bugzilla."""
+	pass
+
 class Bugzilla(object):
 	"""Base class for all bugzilla classes."""
 
@@ -200,12 +213,31 @@ class Bugzilla(object):
 	def getData(self):
 		raise NotImplementedError("Should implement!")
 
+	def setSearchWord(self, sw):
+		"""Sets word to search for in online bug database."""
+		self.__search_word = str(sw)
 
-class BugzillaException(Exception):
-	"""Error raise for enything related to bugzilla."""
-	pass
+	def getSearchWord(self):
+		return self.__search_word
+
+	def getBugs(self, search_word=None):
+		raise NotImplementedError("Should implement!")
+
+class xmlFedoraBugzilla(Bugzilla):
+	url = "https://bugzilla.redhat.com/xmlrpc.cgi"
+	def __init__(self):
+		Bugzilla.__init__(self)
+		self.xmlrpc = xmlrpcBugzilla_import(self.url, verbose = False)
+	
+	def getBugs(self, search_word):
+		if search_word is not None:
+			self.setSearchWord(search_word)
+		all_bugs = self.xmlrpc.Bug.search({"summary":str(self.getSearchWord())})
+		self.db.saveBugs(all_bugs)
+
 
 class FedoraBugzilla(Bugzilla):
+	"""Old but gold :(. Not in use anymore."""
 	__base_url = "https://bugzilla.redhat.com"
 	__test_url_template = __base_url + "/buglist.cgi?query_format=specific&order=relevance+desc&bug_status=__open__"\
 	"&product=&content=%s"
@@ -214,10 +246,6 @@ class FedoraBugzilla(Bugzilla):
 	__url_for_all_bugs = __base_url + "/show_bug.cgi"
 	def __init__(self, search_word = "linux"):
 		super(FedoraBugzilla, self).__init__()
-
-	def setSearchWord(self, sw):
-		"""Sets word to search for in online bug database."""
-		self.__search_word = str(sw)
 
 	def getBugs(self, search_word=None):
 		""" Finds all bugs for given search word. Also sets search word. """
@@ -295,24 +323,44 @@ class Entity:
 	while bugs is also going to be entity...
 	ORM
 	"""
-	def __getattr__(self, name):
+	def getAttr(self, name):
 		if name in self.fields:
 			return self.fields[name]
-		raise AttributeError(name + " doesnt exists")
 
-	def __getattr__(self, name, value):
-		print "TRAZIM PRISTUP ZA IME,", value
-		if value=="fields":
-			return self.fields
+	def setAttr(self, name, value):
+		#print "TRAZIM PRISTUP ZA ", name, value
 		if name in self.fields:
 			self.fields[name] = value
-		raise AttributeError(name + " doesnt exists")
+		elif "bug_"+name in self.fields:
+			self.fields["bug_"+name] = value
+		else:
+			self.fields[name]=value
+
+	def saveFromDict(self, dict_to_parse):
+		for field in dict_to_parse:
+			self.setAttr(field, dict_to_parse[field])
+
+	def getAsXML(self):
+		newBug = ET.Element("bug")
+		for key in self.fields:
+			if self.fields[key] is not None:
+				try:
+					newField = ET.SubElement(newBug, key)
+					newField.text = str(self.fields[key])
+				except:
+					print "error kod str unicode:("
+		return newBug
 
 	def getFields(self):
 		return self.fields
 
 class FedoraBugzillaEntity(Entity):
 	fields = None
+
+	def printMe(self):
+		for k in self.fields:
+			print k, "=>", self.fields[k]
+		print ''
 
 	def __init__(self):
 		self.fields = {"bug_id":None,
