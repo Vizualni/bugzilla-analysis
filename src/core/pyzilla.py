@@ -1,4 +1,3 @@
-#!/usr/bin/python2.6
 # pyzilla.py is a Python wrapper for the xmlrpc interface of bugzilla
 # Copyright (C) <2010>  <Noufal Ibrahim>
 
@@ -15,12 +14,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import cookielib
+import logging
 import os
 import sys
-import xmlrpclib
 import urllib2
-import logging
-import cookielib
+import xmlrpclib
 
 def create_user_agent():
     ma, mi, rel = sys.version_info[:3]
@@ -36,7 +35,7 @@ class CookieAuthXMLRPCTransport(xmlrpclib.SafeTransport):
 
     """
 
-    def __init__(self, cookiefile = False, user_agent = False):
+    def __init__(self, cookiefile = None, user_agent = None):
         self.cookiefile = cookiefile or "cookies.txt"
         self.user_agent = user_agent or create_user_agent()
         xmlrpclib.SafeTransport.__init__(self)
@@ -77,7 +76,17 @@ class CookieAuthXMLRPCTransport(xmlrpclib.SafeTransport):
         # creating a cookie jar for my cookies
         cj = cookielib.LWPCookieJar()
         self.send_content(h, request_body)
-        errcode, errmsg, headers = h.getreply()
+        try:
+            # In Python <= 2.6, h is an HTTP object, which has a nice
+            # "getreply" method.
+            errcode, errmsg, headers = h.getreply()
+        except AttributeError:
+            # In other reasons we have an HTTPConnection, which has a
+            # different interface
+            resp = h.getresponse()
+            errcode = resp.status
+            errmsg = resp.reason
+            headers = resp.msg
         cresponse = CookieResponse(headers)
         cj.extract_cookies(cresponse, crequest)
         if len(cj) >0 and not os.path.exists(self.cookiefile):
@@ -89,14 +98,18 @@ class CookieAuthXMLRPCTransport(xmlrpclib.SafeTransport):
         self.verbose = verbose
         try:
             sock = h._conn.sock
+            return self._parse_response(h.getfile(), sock)
         except AttributeError:
             sock = None
-        return self._parse_response(h.getfile(), sock)
+            return self.parse_response(resp)
 
 class BugZilla(xmlrpclib.Server):
-    def __init__(self, url, verbose = False):
-        xmlrpclib.Server.__init__(self, url, CookieAuthXMLRPCTransport(),
-                                  verbose = verbose, allow_none=True)
+    def __init__(self, url, verbose = False, cookiefile =  None,
+            user_agent=None):
+        xmlrpclib.Server.__init__(self, url,
+                CookieAuthXMLRPCTransport(cookiefile = cookiefile,
+                    user_agent = user_agent),
+                                  verbose = verbose)
 
     def login(self, username, password):
         self.User.login (dict(login=username,
