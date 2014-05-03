@@ -5,6 +5,9 @@ import urllib2
 import os
 import re
 import sys
+import matplotlib.pyplot as plt
+import matplotlib.mlab as mlab
+import numpy as np
 import xml.etree.ElementTree as ET
 from pyzilla import BugZilla as xmlrpcBugzilla_import
 
@@ -48,9 +51,10 @@ class DatabaseInterface():
 
 class XMLDatabase(DatabaseInterface):
 	__folder = "./data/"
-	__filename_template = "bugzilla-database-%d.xml"
-	__filename_regex = "bugzilla-database-(\d+)\.xml"
-	__current_file_index = 1
+	__filename_template = "bugzilla-database-%s.xml"
+	__filename_regex = "bugzilla-database-([a-zA-Z0-9 \.]+)\.xml"
+	__productName = ""
+
 	def __getAllFiles(self):
 		"""Gets all files that match bugzilla format."""
 		files = []
@@ -63,7 +67,7 @@ class XMLDatabase(DatabaseInterface):
 
 	def __getCurrentFile(self):
 		"""Returns current file to write xml file in."""
-		filename = self.__folder + self.__filename_template %(self.__current_file_index)
+		filename = self.__folder + self.__filename_template %(self.__productName)
 		if not os.path.isfile(filename):
 			tmp = ET.Element("bugs")
 			ttree = ET.ElementTree(tmp)
@@ -72,22 +76,22 @@ class XMLDatabase(DatabaseInterface):
 
 	def __createNewXMLFile(self):
 		"""Creates empty XML file and return its filename."""
-		i = 1 # current database index.
-		indexSet = set()
+
+		if len(self.__productName)==0:
+			raise ValueError("You must set product name")
+
 		for f in self.__getAllFiles():
 			rm = re.match(self.__filename_regex, f)
 			if rm is not None:
 				indexSet.add(rm.group(0))
-		while True:
-			if i not in indexSet:
-				break
-			i+=1
-		self.__current_file_index = i
-		filename = self.__filename_template % (__current_file_index)
+		filename = self.__filename_template % (self.__productName)
 		root = ET.Element("bugs")
 		tree = ET.ElementTree(root)
 		tree.write(filename)
 		return filename
+
+	def setProductName(self, pn):
+		self.__productName = str(pn)
 
 	def __getListOfBugsFromXML(self, xml):
 		"""Gets list of bugs from xml file that has been downloaded."""
@@ -118,7 +122,6 @@ class XMLDatabase(DatabaseInterface):
 		elif isinstance(bugs, ET.ElementTree):
 			list_of_bugs = self.__getListOfBugsFromXML(bugs)
 		elif type(bugs) is dict:
-			print "diksneri je"
 			for bug in bugs["bugs"]:
 				novi_bug = FedoraBugzillaEntity()
 				novi_bug.saveFromDict(bug)
@@ -134,8 +137,8 @@ class XMLDatabase(DatabaseInterface):
 		try:
 			tree.write(current_file)
 		except:
-			return False
-		return True
+			return None
+		return list_of_bugs
 
 	def createEntity(self, data):
 		raise NotImplementedError("DOVRSI OVO")
@@ -200,7 +203,7 @@ class BugzillaException(Exception):
 	"""Error raise for enything related to bugzilla."""
 	pass
 
-class Bugzilla(object):
+class BugzillaBaseClass(object):
 	"""Base class for all bugzilla classes."""
 
 	def __init__(self):
@@ -223,20 +226,22 @@ class Bugzilla(object):
 	def getBugs(self, search_word=None):
 		raise NotImplementedError("Should implement!")
 
-class xmlFedoraBugzilla(Bugzilla):
+class FedoraBugzilla(BugzillaBaseClass):
 	url = "https://bugzilla.redhat.com/xmlrpc.cgi"
 	def __init__(self):
-		Bugzilla.__init__(self)
+		BugzillaBaseClass.__init__(self)
 		self.xmlrpc = xmlrpcBugzilla_import(self.url, verbose = False)
 	
 	def getBugs(self, search_word):
+		self.db.setProductName(search_word)
 		if search_word is not None:
 			self.setSearchWord(search_word)
-		all_bugs = self.xmlrpc.Bug.search({"summary":str(self.getSearchWord())})
-		self.db.saveBugs(all_bugs)
+		all_bugs = self.xmlrpc.Bug.search({"component":str(self.getSearchWord())})
+		parsed_bugs = self.db.saveBugs(all_bugs)
+		return parsed_bugs
 
 
-class FedoraBugzilla(Bugzilla):
+class FedoraBugzillaNOXML(BugzillaBaseClass):
 	"""Old but gold :(. Not in use anymore."""
 	__base_url = "https://bugzilla.redhat.com"
 	__test_url_template = __base_url + "/buglist.cgi?query_format=specific&order=relevance+desc&bug_status=__open__"\
@@ -348,11 +353,22 @@ class Entity:
 					newField = ET.SubElement(newBug, key)
 					newField.text = str(self.fields[key])
 				except:
-					print "error kod str unicode:("
+					pass
+					#print "error kod str unicode:("
 		return newBug
 
 	def getFields(self):
 		return self.fields
+
+	@staticmethod
+	def getEntitiesFromListOfXML(list_of_xml):
+		lista = []
+		for xmlic in list_of_xml:
+			tmp = {}
+			for child in xmlic:
+				tmp[child.tag] = child.text
+			lista.append(tmp)
+		return lista
 
 class FedoraBugzillaEntity(Entity):
 	fields = None
@@ -394,3 +410,67 @@ class FedoraBugzillaEntity(Entity):
 			"cf_documentation_action":None,
 			"cf_category":None,
 			"target_release":None}
+
+
+class BugzillaAnalysis:
+	"""Where you can draw graphs and make some analysis."""
+	__filename = None
+	__XML = None
+	__listOfDicts = None #List of dictionaries
+	def __init__(self):
+		self.query = Query()
+		pass
+
+	def loadByFilename(self, filename):
+		pass
+
+	def loadByXML(self, xml):
+		pass
+
+	def loadByListOfDicts(self, ld):
+		pass
+
+	def loadByListOfXMLBugs(self, list_xml):
+		pass
+
+	def load(self, what):
+
+		#!!!!! TREBA SKUZIT KOJEG JE TIPA, JA SADA TO AUTOMATSKI RADIM I PRETPOSTAVLJAM DA JE LISTA XML-OVA
+		self.__listOfDicts = Entity.getEntitiesFromListOfXML(what)
+
+		for x in self.__listOfDicts:
+			self.query.addElement(x)
+
+
+	def start(self):
+		self.getByVersionCount()
+
+	def getByVersionCount(self, message="Hai"):
+		"""saves image graph displaying bug count by version"""
+
+		tmp = {} #grupiranje po datumu
+		for helpme in self.__listOfDicts:
+			x = helpme["version"]
+			if x in tmp:
+				tmp[x]+=1
+			else:
+				tmp[x]=1
+
+		data, values = tmp.keys(), tmp.values()
+		plt.bar(range(len(data)), values, align='center')
+		plt.xticks(range(len(data)), data, rotation=90, size='small')
+		plt.xlim([0, len(data)])
+		plt.ylim([0, max(values)+1])
+		plt.savefig('haai.png')
+		plt.show()
+class Query:
+	elements = []
+	groupedBy = None
+	def addElement(self, el):
+		#mora biti dictionary
+		self.elements.append(el)
+	def groupBy(self, field):
+		pass
+
+	def count(self):
+		return len(self.elements)
