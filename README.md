@@ -9,3 +9,13 @@ ToDo List:
 * Add support for questom queries
 * Transfer all data to MySQL database
 * Automatic downloading and farming bugs for later analysis
+Example of usage.
+```python
+from core.base import FedoraBugzilla
+from core.base import BugzillaAnalysis
+fedoraBugzilla = FedoraBugzilla()
+result = fedoraBugzilla.getBugs("curl")
+bugZilla = BugzillaAnalysis()
+bugZilla.load(res)
+bugZilla.start() #creates image and saves is on hard drive (for now)
+```
