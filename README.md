@@ -17,6 +17,6 @@ from core.base import BugzillaAnalysis
 fedoraBugzilla = FedoraBugzilla()
 result = fedoraBugzilla.getBugs("curl")
 bugZilla = BugzillaAnalysis()
-bugZilla.load(res)
+bugZilla.load(result)
 bugZilla.start() #creates image and saves is on hard drive (for now)
 ```
