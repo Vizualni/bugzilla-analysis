@@ -9,6 +9,7 @@ ToDo List:
 * Add support for questom queries
 * Transfer all data to MySQL database
 * Automatic downloading and farming bugs for later analysis
+
 Example of usage.
 ```python
 from core.base import FedoraBugzilla
