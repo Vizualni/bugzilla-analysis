@@ -28,40 +28,35 @@ class DatabaseInterface():
     This is interface that every database should implement.
 
     """
+    __productName = ""
     def getBugByBugId(self, bug_id):
         """ Gets bug by bug id. """
         raise NotImplementedError()
 
-    def saveBugs(self, bug):
+    def saveBugs(self, bugs):
         """ Saves bug (finds bug by bug.id and replaces it). """
-        raise NotImplementedError()
-
-    def insertBug(self, bug):
-        """ Inserts new bug into database. """
         raise NotImplementedError()
 
     def deleteBugByBugId(self, bug_id):
         """ Deletes bug whose id is bug_id. """
         raise NotImplementedError()
 
-    def removeDuplicates(self, bug_id):
+    def removeDuplicates(self):
         """ Removes duplicates from database.
         If found keeps one that is newer. """
         raise NotImplementedError()
 
-    def getEntity(self, bug):
-        """ Gets globally represented entity from xml """
-        raise NotImplementedError()
-
     def setProductName(self, pn):
         self.__productName = str(pn)
+
+    def getProductName(self):
+        return self.__productName
 
 
 class XMLDatabase(DatabaseInterface):
     __folder = "./data/"
     __filename_template = "bugzilla-database-%s.xml"
     __filename_regex = "bugzilla-database-([a-zA-Z0-9 \.]+)\.xml"
-    __productName = ""
 
     def __getAllFiles(self):
         """Gets all files that match bugzilla format."""
@@ -75,7 +70,7 @@ class XMLDatabase(DatabaseInterface):
 
     def __getCurrentFile(self):
         """Returns current file to write xml file in."""
-        filename = self.__folder + self.__filename_template %(self.__productName)
+        filename = self.__folder + self.__filename_template %(self.getProductName())
         if not os.path.isfile(filename):
             tmp = ET.Element("bugs")
             ttree = ET.ElementTree(tmp)
@@ -84,13 +79,13 @@ class XMLDatabase(DatabaseInterface):
 
     def __createNewXMLFile(self):
         """Creates empty XML file and return its filename."""
-        if len(self.__productName)==0:
+        if len(self.getProductName())==0:
             raise ValueError("You must set product name")
         for f in self.__getAllFiles():
             rm = re.match(self.__filename_regex, f)
             if rm is not None:
                 indexSet.add(rm.group(0))
-        filename = self.__filename_template % (self.__productName)
+        filename = self.__filename_template % (self.getProductName())
         root = ET.Element("bugs")
         tree = ET.ElementTree(root)
         tree.write(filename)
@@ -127,10 +122,10 @@ class XMLDatabase(DatabaseInterface):
         elif type(bugs) is dict:
             for bug in bugs["bugs"]:
                 novi_bug = FedoraBugzillaEntity()
-                novi_bug.saveFromDict(bug)
+                novi_bug.createFromDict(bug)
                 #novi_bug.printMe()
                 list_of_bugs.append(novi_bug.getAsXML())
-        debug( "There are %d bugs for %s"%(len(list_of_bugs), self.__productName) )
+        debug( "There are %d bugs for %s"%(len(list_of_bugs), self.getProductName()) )
         current_file = self.__getCurrentFile()
         tree = ET.parse(current_file)
         root = tree.getroot()
@@ -336,7 +331,7 @@ class Entity:
         else:
             self.fields[name]=value
 
-    def saveFromDict(self, dict_to_parse):
+    def createFromDict(self, dict_to_parse):
         for field in dict_to_parse:
             self.setAttr(field, dict_to_parse[field])
 
@@ -436,13 +431,13 @@ class BugzillaAnalysis:
         """saves image graph displaying bug count by version"""
         tmp = {}  # grupiranje po datumu
         for helpme in self.__listOfDicts:
-            x = helpme["version"]
-            if x.find("rawhide")!=-1:
+            version = helpme["version"]
+            if version.find("rawhide")!=-1:
                 continue
-            if x in tmp:
-                tmp[x]+=1
+            if version in tmp:
+                tmp[version]+=1
             else:
-                tmp[x]=1
+                tmp[version]=1
         data, values = tmp.keys(), tmp.values()
         plt.bar(range(len(data)), values, align='center')
         plt.xticks(range(len(data)), data, rotation=90, size='small')
